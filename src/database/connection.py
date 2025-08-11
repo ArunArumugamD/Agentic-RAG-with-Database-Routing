@@ -115,8 +115,8 @@ class DatabaseManager:
             import time
             start = time.time()
             async with self.get_postgres_session() as session:
-                result = await session.execute("SELECT 1")
-                await result.fetchone()
+                result = await session.execute(text("SELECT 1"))
+                result.fetchone()
             
             health["postgres"]["status"] = "healthy"
             health["postgres"]["latency_ms"] = round((time.time() - start) * 1000, 2)
