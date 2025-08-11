@@ -1,5 +1,5 @@
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func, and_, or_, desc, asc
+from sqlalchemy import select, func, and_, or_, desc, asc, update
 from sqlalchemy.orm import selectinload
 from typing import List, Dict, Any, Optional, Tuple
 from datetime import datetime, timedelta
@@ -378,6 +378,45 @@ class PostgreSQLAdapter:
             "associated_actors": malware.associated_actors,
             "kill_chain_phases": malware.kill_chain_phases
         }
+    
+    # CVE management methods for data collection
+    async def get_cve_by_id(self, cve_id: str) -> Optional[CVERecord]:
+        """Get a CVE record by its ID."""
+        try:
+            result = await self.session.execute(
+                select(CVERecord).where(CVERecord.cve_id == cve_id)
+            )
+            return result.scalar_one_or_none()
+        except Exception as e:
+            logger.error(f"Error fetching CVE {cve_id}: {e}")
+            return None
+    
+    async def create_cve(self, cve_data: Dict[str, Any]) -> Optional[CVERecord]:
+        """Create a new CVE record."""
+        try:
+            cve = CVERecord(**cve_data)
+            self.session.add(cve)
+            await self.session.flush()
+            await self.session.refresh(cve)
+            return cve
+        except Exception as e:
+            logger.error(f"Error creating CVE {cve_data.get('cve_id', 'unknown')}: {e}")
+            await self.session.rollback()
+            return None
+    
+    async def update_cve(self, cve_id: int, cve_data: Dict[str, Any]) -> bool:
+        """Update an existing CVE record."""
+        try:
+            await self.session.execute(
+                update(CVERecord)
+                .where(CVERecord.id == cve_id)
+                .values(**cve_data)
+            )
+            return True
+        except Exception as e:
+            logger.error(f"Error updating CVE {cve_id}: {e}")
+            await self.session.rollback()
+            return False
     
     def _exploit_to_dict(self, exploit: VulnerabilityExploit) -> Dict[str, Any]:
         return {
