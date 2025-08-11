@@ -20,6 +20,11 @@ import json
 import sys
 from pathlib import Path
 import hashlib
+import os
+from dotenv import load_dotenv
+
+# Load environment variables
+load_dotenv()
 
 # Add src to Python path
 sys.path.insert(0, str(Path(__file__).parent.parent))
@@ -44,11 +49,11 @@ class RealIOCCollector:
     def __init__(self):
         # AlienVault OTX API (free, requires API key)
         self.otx_base_url = "https://otx.alienvault.com/api/v1"
-        self.otx_api_key = "YOUR_OTX_API_KEY"  # Free signup at otx.alienvault.com
+        self.otx_api_key = os.getenv("OTX_API_KEY", "YOUR_OTX_API_KEY")  # Free signup at otx.alienvault.com
         
         # AbuseIPDB API (free tier: 1000 requests/day)
         self.abuseipdb_url = "https://api.abuseipdb.com/api/v2/check"
-        self.abuseipdb_key = "YOUR_ABUSEIPDB_KEY"  # Free signup at abuseipdb.com
+        self.abuseipdb_key = os.getenv("ABUSEIPDB_API_KEY", "YOUR_ABUSEIPDB_KEY")  # Free signup at abuseipdb.com
         
         # URLVoid API (free tier available)
         self.urlvoid_base = "https://api.urlvoid.com"
