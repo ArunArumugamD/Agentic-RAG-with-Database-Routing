@@ -220,7 +220,8 @@ class CybersecurityQueryClassifier:
                     score += 0.1
         
         # Boost score for keyword presence
-        for keyword in settings.structured_query_keywords:
+        structured_keywords = ['cve', 'cvss', 'severity', 'exploit', 'vendor', 'product']
+        for keyword in structured_keywords:
             if keyword in query:
                 score += 0.05
         
@@ -243,7 +244,8 @@ class CybersecurityQueryClassifier:
                     score += 0.1
         
         # Boost score for semantic indicators
-        for indicator in settings.semantic_query_indicators:
+        semantic_indicators = ['explain', 'describe', 'tell me about', 'what is', 'how does', 'impact', 'affects']
+        for indicator in semantic_indicators:
             if indicator in query:
                 score += 0.05
         
@@ -338,6 +340,82 @@ class CybersecurityQueryClassifier:
         else:
             # Fallback based on scores
             return structured_score > 0.1, semantic_score > 0.1
+    
+    def generate_routing_plan(self, query: str) -> Dict[str, Any]:
+        """
+        Generate a comprehensive routing plan for the query.
+        This includes classification, data source selection, and query parameters.
+        """
+        import hashlib
+        
+        # Classify the query
+        classification = self.classify_query(query)
+        
+        # Determine data source based on classification
+        if classification.requires_structured and classification.requires_semantic:
+            data_source = "both"
+        elif classification.requires_structured:
+            data_source = "postgresql"
+        elif classification.requires_semantic:
+            data_source = "qdrant"
+        else:
+            data_source = "both"  # Default to both if uncertain
+        
+        # Extract filters based on query content
+        filters = {}
+        
+        # Check for CVE IDs
+        import re
+        cve_pattern = re.compile(r'CVE-\d{4}-\d{4,}', re.IGNORECASE)
+        cve_matches = cve_pattern.findall(query)
+        if cve_matches:
+            filters["cve_id"] = cve_matches[0]
+        
+        # Check for severity levels
+        if any(sev in query.lower() for sev in ["critical", "high", "medium", "low"]):
+            for sev in ["critical", "high", "medium", "low"]:
+                if sev in query.lower():
+                    filters["severity"] = sev
+                    break
+        
+        # Check for temporal references
+        if any(temp in query.lower() for temp in ["recent", "latest", "last", "days", "week", "month"]):
+            filters["temporal"] = "recent"
+        
+        # Check for specific vendors/products
+        vendor_keywords = ["microsoft", "apache", "cisco", "vmware", "oracle", "adobe"]
+        for vendor in vendor_keywords:
+            if vendor in query.lower():
+                filters["vendor"] = vendor
+                break
+        
+        # Generate cache key
+        cache_key = hashlib.md5(query.encode()).hexdigest()
+        
+        # Build routing plan
+        routing_plan = {
+            "query": query,
+            "query_type": classification.query_type.value,
+            "intent": classification.intent.value,
+            "data_source": data_source,
+            "filters": filters,
+            "cache_key": cache_key,
+            "requires_llm": classification.intent in [
+                QueryIntent.EXPLANATION,
+                QueryIntent.TREND_ANALYSIS,
+                QueryIntent.THREAT_ANALYSIS
+            ],
+            "sql_params": {
+                "limit": 50 if classification.intent != QueryIntent.STATISTICS else 100
+            },
+            "vector_params": {
+                "limit": 10,
+                "score_threshold": 0.5
+            },
+            "confidence": classification.confidence
+        }
+        
+        return routing_plan
 
 
 # Global instance for compatibility

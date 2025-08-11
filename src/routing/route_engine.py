@@ -6,6 +6,7 @@ import logging
 import json
 
 from src.routing.query_classifier import query_classifier, QueryType, DataSource
+from src.routing.self_correction import self_corrector, CorrectionStrategy, GradingResult
 from src.database.connection import db_manager
 from src.database.postgresql_adapter import PostgreSQLAdapter
 from src.vector_store.qdrant_adapter import qdrant_adapter, SearchResult
@@ -33,7 +34,9 @@ class SelfCorrectingRouteEngine:
     def __init__(self):
         self.relevance_threshold = 0.7
         self.min_results_threshold = 3
-        self.max_retries = 2
+        self.max_retries = 3
+        self.correction_attempts = 0
+        self.self_corrector = self_corrector
     
     async def route_and_execute(
         self,
@@ -58,13 +61,17 @@ class SelfCorrectingRouteEngine:
         results = await self._execute_query(query, routing_plan, mode)
         
         # Grade relevance
-        relevance_score = await self._grade_relevance(query, results)
+        relevance_score, grading = await self._grade_relevance(query, results)
         
         # Self-correct if needed
-        if relevance_score < self.relevance_threshold:
-            logger.info(f"Low relevance score: {relevance_score}. Attempting self-correction.")
-            results = await self._self_correct(query, routing_plan, results)
-            relevance_score = await self._grade_relevance(query, results)
+        self.correction_attempts = 0
+        while relevance_score < self.relevance_threshold and self.correction_attempts < self.max_retries:
+            logger.info(f"Low relevance score: {relevance_score:.2f}. Attempting self-correction (attempt {self.correction_attempts + 1})")
+            logger.info(f"Issues: {grading.issues}")
+            
+            results = await self._self_correct(query, routing_plan, results, grading)
+            relevance_score, grading = await self._grade_relevance(query, results)
+            self.correction_attempts += 1
         
         # Generate final response
         response = await self._generate_response(
@@ -84,7 +91,8 @@ class SelfCorrectingRouteEngine:
             query=query,
             routing_plan=routing_plan,
             response=response,
-            relevance_score=relevance_score
+            relevance_score=relevance_score,
+            grading=grading
         )
         
         return response
@@ -262,106 +270,120 @@ class SelfCorrectingRouteEngine:
         self,
         query: str,
         results: List[QueryResult]
-    ) -> float:
-        """Grade the relevance of results to the query"""
+    ) -> Tuple[float, GradingResult]:
+        """Grade the relevance of results using advanced grading"""
         if not results or not any(r.data for r in results):
-            return 0.0
-        
-        # Simple grading based on result count and confidence
-        total_results = sum(len(r.data) for r in results)
-        avg_confidence = sum(r.confidence for r in results) / len(results)
-        
-        # Check if we have minimum results
-        if total_results < self.min_results_threshold:
-            relevance = 0.5
-        else:
-            relevance = min(1.0, avg_confidence + (total_results / 100))
-        
-        # Use LLM for more sophisticated grading if needed
-        if results and 0.3 < relevance < 0.7:
-            relevance = await self._llm_grade_relevance(query, results)
-        
-        return relevance
-    
-    async def _llm_grade_relevance(
-        self,
-        query: str,
-        results: List[QueryResult]
-    ) -> float:
-        """Use LLM to grade relevance"""
-        try:
-            # Prepare summary of results
-            result_summary = []
-            for r in results[:3]:  # Limit to first 3 results
-                for item in r.data[:2]:  # Limit to 2 items per result
-                    if isinstance(item, dict):
-                        summary = str(item)[:200]
-                        result_summary.append(summary)
-            
-            prompt = f"""Grade the relevance of these search results to the query.
-            
-            Query: "{query}"
-            
-            Results summary:
-            {json.dumps(result_summary, indent=2)}
-            
-            Rate relevance from 0.0 to 1.0 where:
-            - 1.0 = Highly relevant, directly answers the query
-            - 0.7 = Relevant, provides useful information
-            - 0.5 = Somewhat relevant, partially addresses query
-            - 0.3 = Marginally relevant
-            - 0.0 = Not relevant
-            
-            Respond with ONLY the numeric score.
-            """
-            
-            response = await llm_service.generate_response(
-                prompt,
-                temperature=0.1,
-                max_tokens=10
+            return 0.0, GradingResult(
+                relevance_score=0.0,
+                completeness_score=0.0,
+                accuracy_confidence=0.0,
+                issues=["No results returned"],
+                suggestions=["Expand search", "Reformulate query"]
             )
-            
-            # Parse score
-            score = float(response.strip())
-            return min(1.0, max(0.0, score))
-            
-        except Exception as e:
-            logger.error(f"LLM relevance grading failed: {e}")
-            return 0.5
+        
+        # Combine all results for grading
+        all_data = []
+        for r in results:
+            all_data.extend(r.data)
+        
+        # Use advanced grading
+        grading = await self.self_corrector.grade_results(
+            query=query,
+            results=all_data,
+            expected_type=None
+        )
+        
+        # Calculate overall score
+        overall_score = (
+            grading.relevance_score * 0.5 +
+            grading.completeness_score * 0.3 +
+            grading.accuracy_confidence * 0.2
+        )
+        
+        return overall_score, grading
+    
     
     async def _self_correct(
         self,
         query: str,
         routing_plan: Dict[str, Any],
-        initial_results: List[QueryResult]
+        initial_results: List[QueryResult],
+        grading: GradingResult
     ) -> List[QueryResult]:
-        """Attempt to self-correct poor results"""
-        corrections = []
+        """Attempt to self-correct poor results using advanced strategies"""
         
-        # Strategy 1: Expand search to both databases
-        if routing_plan["data_source"] != "both":
-            logger.info("Self-correction: Expanding to both databases")
-            routing_plan["data_source"] = "both"
-            corrections = await self._execute_query(query, routing_plan, "comprehensive")
+        # Generate correction strategies
+        correction_strategies = await self.self_corrector.generate_corrections(
+            query=query,
+            grading=grading,
+            current_plan=routing_plan,
+            attempt_number=self.correction_attempts + 1
+        )
         
-        # Strategy 2: Relax filters
-        elif routing_plan["filters"]:
-            logger.info("Self-correction: Relaxing filters")
-            relaxed_plan = routing_plan.copy()
-            relaxed_plan["filters"] = {}
-            corrections = await self._execute_query(query, relaxed_plan, "comprehensive")
+        corrected_results = initial_results
         
-        # Strategy 3: Use semantic search if structured failed
-        elif routing_plan["data_source"] == "postgresql":
-            logger.info("Self-correction: Trying semantic search")
-            routing_plan["data_source"] = "qdrant"
-            corrections = await self._execute_query(query, routing_plan, "comprehensive")
+        for strategy, params in correction_strategies:
+            logger.info(f"Applying correction strategy: {strategy.value}")
+            
+            if strategy == CorrectionStrategy.EXPAND_SOURCES:
+                # Expand to both databases
+                expanded_plan = routing_plan.copy()
+                expanded_plan["data_source"] = "both"
+                if params.get("increase_limit"):
+                    expanded_plan["sql_params"] = {"limit": 100}
+                    expanded_plan["vector_params"] = {"limit": 20}
+                corrected_results = await self._execute_query(query, expanded_plan, "comprehensive")
+            
+            elif strategy == CorrectionStrategy.RELAX_FILTERS:
+                # Remove specified filters
+                relaxed_plan = routing_plan.copy()
+                filters_to_remove = params.get("remove_filters", [])
+                for filter_key in filters_to_remove:
+                    relaxed_plan["filters"].pop(filter_key, None)
+                corrected_results = await self._execute_query(query, relaxed_plan, "comprehensive")
+            
+            elif strategy == CorrectionStrategy.REFORMULATE_QUERY:
+                # Reformulate the query
+                reformulated = await self.self_corrector.reformulate_query(
+                    original_query=query,
+                    issues=grading.issues,
+                    context=routing_plan
+                )
+                new_plan = query_classifier.generate_routing_plan(reformulated)
+                corrected_results = await self._execute_query(reformulated, new_plan, "comprehensive")
+            
+            elif strategy == CorrectionStrategy.DECOMPOSE_QUERY:
+                # Decompose into sub-queries
+                subqueries = await self.self_corrector.decompose_complex_query(
+                    query=query,
+                    max_subqueries=params.get("max_subqueries", 3)
+                )
+                all_results = []
+                for subquery in subqueries:
+                    sub_plan = query_classifier.generate_routing_plan(subquery)
+                    sub_results = await self._execute_query(subquery, sub_plan, "balanced")
+                    all_results.extend(sub_results)
+                corrected_results = all_results
+            
+            elif strategy == CorrectionStrategy.USE_SYNONYMS:
+                # Enrich with synonyms
+                enriched_query = await self.self_corrector.enrich_with_synonyms(query)
+                new_plan = query_classifier.generate_routing_plan(enriched_query)
+                corrected_results = await self._execute_query(enriched_query, new_plan, "comprehensive")
+            
+            elif strategy == CorrectionStrategy.TEMPORAL_ADJUSTMENT:
+                # Add temporal filters
+                temporal_plan = routing_plan.copy()
+                temporal_plan["filters"]["days_back"] = params.get("days", 90)
+                corrected_results = await self._execute_query(query, temporal_plan, "comprehensive")
+            
+            # Check if correction improved results
+            if corrected_results and len(corrected_results) > 0:
+                if any(r.data for r in corrected_results):
+                    logger.info(f"Correction strategy {strategy.value} produced results")
+                    break
         
-        # Combine results
-        if corrections:
-            return corrections
-        else:
-            return initial_results
+        return corrected_results if corrected_results else initial_results
     
     async def _generate_response(
         self,
@@ -473,7 +495,8 @@ class SelfCorrectingRouteEngine:
         query: str,
         routing_plan: Dict[str, Any],
         response: Dict[str, Any],
-        relevance_score: float
+        relevance_score: float,
+        grading: GradingResult = None
     ) -> None:
         """Log query performance metrics"""
         try:
