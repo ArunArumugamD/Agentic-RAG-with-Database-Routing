@@ -22,12 +22,15 @@ class CVERecord(Base):
     references = Column(JSON, nullable=True)
     exploit_available = Column(Boolean, default=False, index=True)
     patch_available = Column(Boolean, default=False, index=True)
+    epss_score = Column(Float, nullable=True, index=True)  # Exploit Prediction Scoring System
+    risk_score = Column(Float, nullable=True, index=True)  # Composite risk score
     created_at = Column(DateTime, default=datetime.utcnow)
     
     # Indexes for performance
     __table_args__ = (
         Index('idx_cve_severity_score', 'severity', 'cvss_score'),
         Index('idx_cve_date_severity', 'published_date', 'severity'),
+        Index('idx_cve_risk_epss', 'risk_score', 'epss_score'),
     )
 
 
