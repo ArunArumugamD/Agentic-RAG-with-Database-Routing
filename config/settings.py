@@ -45,7 +45,7 @@ class Settings(BaseSettings):
     
     # AI/LLM Configuration (Free Open Source)
     LLM_PROVIDER: str = "groq"
-    LLM_MODEL: str = "mixtral-8x7b-32768"
+    LLM_MODEL: str = "deepseek-r1-distill-llama-70b"
     GROQ_API_KEY: str = Field(default="")
     EMBEDDING_MODEL: str = "sentence-transformers/all-MiniLM-L6-v2"
     MAX_TOKENS: int = 2000
