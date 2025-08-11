@@ -165,9 +165,9 @@ class MetricsCollector:
         )
         
         self.app_info.info({
-            'version': settings.api_version,
-            'environment': settings.environment.value,
-            'debug_mode': str(settings.debug)
+            'version': settings.APP_VERSION,
+            'environment': 'development' if settings.DEBUG else 'production',
+            'debug_mode': str(settings.DEBUG)
         })
     
     def record_api_request(self, method: str, endpoint: str, status_code: int, duration: float):
@@ -365,8 +365,8 @@ class MetricsCollector:
                 "disk_percent": disk.percent if disk else None
             },
             "application": {
-                "version": settings.api_version,
-                "environment": settings.environment.value,
+                "version": settings.APP_VERSION,
+                "environment": 'development' if settings.DEBUG else 'production',
                 "uptime_hours": self.get_uptime_hours()
             }
         }

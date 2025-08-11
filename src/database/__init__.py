@@ -5,40 +5,34 @@ Provides PostgreSQL schema definitions and connection management.
 
 from .connection import (
     db_manager,
-    get_db_session,
-    initialize_database,
-    periodic_view_refresh
+    get_postgres_session,
+    get_redis_client
 )
 from .schemas import (
     Base,
-    CVEEntry,
-    AffectedProduct,
-    ThreatReport,
+    CVERecord,
+    MitreAttackTechnique,
     ThreatActor,
-    ThreatCampaign,
     MalwareFamily,
-    ExploitInfo,
-    PatchInfo,
-    SeverityLevel,
-    ThreatActorType
+    ThreatCampaign,
+    VulnerabilityExploit,
+    IOC,
+    QueryLog
 )
 from .postgresql_adapter import PostgreSQLAdapter
 
 __all__ = [
     "db_manager",
-    "get_db_session", 
-    "initialize_database",
-    "periodic_view_refresh",
+    "get_postgres_session",
+    "get_redis_client",
     "Base",
-    "CVEEntry",
-    "AffectedProduct", 
-    "ThreatReport",
+    "CVERecord",
+    "MitreAttackTechnique",
     "ThreatActor",
-    "ThreatCampaign",
     "MalwareFamily",
-    "ExploitInfo",
-    "PatchInfo",
-    "SeverityLevel",
-    "ThreatActorType",
+    "ThreatCampaign",
+    "VulnerabilityExploit",
+    "IOC",
+    "QueryLog",
     "PostgreSQLAdapter"
 ]

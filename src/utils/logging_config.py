@@ -70,7 +70,7 @@ class CybersecurityLogFilter(logging.Filter):
     def filter(self, record: logging.LogRecord) -> bool:
         # Add cybersecurity context
         record.service = "agentic-rag"
-        record.environment = settings.environment.value
+        record.environment = 'development' if settings.DEBUG else 'production'
         
         # Sanitize sensitive information in log messages
         message = record.getMessage()
@@ -124,7 +124,7 @@ def setup_logging() -> None:
         "handlers": {
             "console": {
                 "class": "logging.StreamHandler",
-                "level": "INFO" if not settings.debug else "DEBUG",
+                "level": "INFO" if not settings.DEBUG else "DEBUG",
                 "formatter": "standard",
                 "stream": sys.stdout,
                 "filters": ["cybersecurity_filter"]
@@ -168,16 +168,16 @@ def setup_logging() -> None:
         },
         "loggers": {
             "": {  # Root logger
-                "level": settings.log_level,
+                "level": settings.LOG_LEVEL,
                 "handlers": ["console", "file_general", "file_json", "file_error"]
             },
             "src.routing": {
-                "level": "DEBUG" if settings.debug else "INFO",
+                "level": "DEBUG" if settings.DEBUG else "INFO",
                 "handlers": ["console", "file_general"],
                 "propagate": False
             },
             "src.agents": {
-                "level": "DEBUG" if settings.debug else "INFO", 
+                "level": "DEBUG" if settings.DEBUG else "INFO", 
                 "handlers": ["console", "file_general"],
                 "propagate": False
             },
@@ -220,9 +220,9 @@ def setup_logging() -> None:
     # Create security logger for sensitive operations
     security_logger = logging.getLogger("security")
     security_logger.info("Logging system initialized", extra={
-        "environment": settings.environment.value,
-        "debug_mode": settings.debug,
-        "log_level": settings.log_level
+        "environment": 'development' if settings.DEBUG else 'production',
+        "debug_mode": settings.DEBUG,
+        "log_level": settings.LOG_LEVEL
     })
 
 

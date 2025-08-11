@@ -4,7 +4,7 @@ Uses ML-based classification and rule-based fallbacks for high accuracy.
 """
 
 import re
-from typing import Dict, List, Tuple, Optional
+from typing import Dict, List, Tuple, Optional, Any
 from enum import Enum
 from dataclasses import dataclass
 import logging
@@ -34,6 +34,13 @@ class QueryIntent(str, Enum):
     SIMILARITY_SEARCH = "similarity_search"
     EXPLANATION = "explanation"
     TREND_ANALYSIS = "trend_analysis"
+
+
+class DataSource(str, Enum):
+    """Data source enumeration for routing decisions."""
+    POSTGRESQL = "postgresql"
+    QDRANT = "qdrant"
+    BOTH = "both"
 
 
 @dataclass
@@ -331,3 +338,7 @@ class CybersecurityQueryClassifier:
         else:
             # Fallback based on scores
             return structured_score > 0.1, semantic_score > 0.1
+
+
+# Global instance for compatibility
+query_classifier = CybersecurityQueryClassifier()

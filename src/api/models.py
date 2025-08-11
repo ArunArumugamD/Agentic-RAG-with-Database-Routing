@@ -372,13 +372,13 @@ class CVESearchRequest(BaseModel):
     
     cve_id: Optional[str] = Field(
         description="Specific CVE identifier",
-        regex=r"CVE-\d{4}-\d{4,}",
+        pattern=r"CVE-\d{4}-\d{4,}",
         example="CVE-2024-0001"
     )
     
     severity: Optional[str] = Field(
         description="CVSS severity level",
-        regex=r"^(critical|high|medium|low)$"
+        pattern=r"^(critical|high|medium|low)$"
     )
     
     vendor: Optional[str] = Field(
@@ -421,7 +421,7 @@ class ThreatActorSearchRequest(BaseModel):
     
     actor_type: Optional[str] = Field(
         description="Type of threat actor",
-        regex=r"^(apt|nation_state|cybercriminal|hacktivist|insider)$"
+        pattern=r"^(apt|nation_state|cybercriminal|hacktivist|insider)$"
     )
     
     active_only: bool = Field(

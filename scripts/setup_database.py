@@ -10,7 +10,7 @@ from pathlib import Path
 # Add src to Python path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from src.database import initialize_database, db_manager
+from src.database import db_manager
 from src.utils.logging_config import setup_logging, get_logger
 
 
@@ -96,11 +96,11 @@ async def load_sample_data():
     
     try:
         async with db_manager.get_session() as session:
-            from src.database.schemas import CVEEntry, ThreatActor
+            from src.database.schemas import CVERecord, ThreatActor
             
             # Add sample CVEs
             for cve_data in sample_cves:
-                cve = CVEEntry(**cve_data)
+                cve = CVERecord(**cve_data)
                 session.add(cve)
             
             # Add sample threat actors  

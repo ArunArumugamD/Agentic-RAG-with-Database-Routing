@@ -47,19 +47,6 @@ class QdrantAdapter:
                     vectors_config=VectorParams(
                         size=self.embedding_dim,
                         distance=Distance.COSINE
-                    ),
-                    optimizers_config=models.OptimizersConfig(
-                        default_segment_number=2,
-                        max_segment_size=20000,
-                        memmap_threshold=20000,
-                        indexing_threshold=20000,
-                        flush_interval_sec=5
-                    ),
-                    hnsw_config=models.HnswConfig(
-                        m=16,
-                        ef_construct=100,
-                        full_scan_threshold=10000,
-                        max_indexing_threads=0
                     )
                 )
                 logger.info(f"Created Qdrant collection: {self.collection_name}")

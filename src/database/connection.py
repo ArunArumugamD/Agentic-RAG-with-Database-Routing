@@ -1,7 +1,7 @@
 import asyncio
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine, async_sessionmaker
-from sqlalchemy.pool import QueuePool
-from sqlalchemy import event
+from sqlalchemy.pool import NullPool
+from sqlalchemy import event, text
 from contextlib import asynccontextmanager
 from typing import AsyncGenerator
 import redis.asyncio as redis
@@ -31,11 +31,7 @@ class DatabaseManager:
             # Create async engine with connection pooling
             self._postgres_engine = create_async_engine(
                 settings.DATABASE_URL.replace("postgresql://", "postgresql+asyncpg://"),
-                poolclass=QueuePool,
-                pool_size=settings.DB_POOL_SIZE,
-                max_overflow=settings.DB_MAX_OVERFLOW,
-                pool_timeout=30,
-                pool_recycle=3600,
+                poolclass=NullPool,
                 echo=settings.DEBUG
             )
             
@@ -48,7 +44,7 @@ class DatabaseManager:
             
             # Test connection
             async with self._postgres_engine.begin() as conn:
-                await conn.run_sync(lambda sync_conn: sync_conn.execute("SELECT 1"))
+                await conn.run_sync(lambda sync_conn: sync_conn.execute(text("SELECT 1")))
                 
             logger.info("PostgreSQL connection established")
             
@@ -161,14 +157,3 @@ async def get_redis_client():
     return await db_manager.get_redis_client()
 
 
-# Database event listeners for monitoring
-@event.listens_for(DatabaseManager, "connect")
-def receive_connect(dbapi_connection, connection_record):
-    """Log database connections"""
-    logger.debug("New database connection established")
-
-
-@event.listens_for(DatabaseManager, "checkout")
-def receive_checkout(dbapi_connection, connection_record, connection_proxy):
-    """Log connection checkout"""
-    logger.debug("Database connection checked out from pool")

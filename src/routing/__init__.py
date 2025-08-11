@@ -7,15 +7,13 @@ from .query_classifier import (
     CybersecurityQueryClassifier,
     QueryType,
     QueryIntent,
-    ClassificationResult
+    ClassificationResult,
+    DataSource
 )
 from .route_engine import (
-    IntelligentRouteEngine,
-    RouteResult,
-    RouteStatus,
-    RelevanceGrade,
-    DatabaseInterface,
-    RelevanceGrader
+    SelfCorrectingRouteEngine,
+    QueryResult,
+    route_engine
 )
 
 __all__ = [
@@ -23,10 +21,8 @@ __all__ = [
     "QueryType", 
     "QueryIntent",
     "ClassificationResult",
-    "IntelligentRouteEngine",
-    "RouteResult",
-    "RouteStatus", 
-    "RelevanceGrade",
-    "DatabaseInterface",
-    "RelevanceGrader"
+    "DataSource",
+    "SelfCorrectingRouteEngine",
+    "QueryResult",
+    "route_engine"
 ]
