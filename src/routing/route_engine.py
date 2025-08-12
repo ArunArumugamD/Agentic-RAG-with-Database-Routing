@@ -7,6 +7,7 @@ import json
 
 from src.routing.query_classifier import query_classifier, QueryType, DataSource
 from src.routing.self_correction import self_corrector, CorrectionStrategy, GradingResult
+from src.routing.relevance_scorer import relevance_scorer, RelevanceMetrics
 from src.database.connection import db_manager
 from src.database.postgresql_adapter import PostgreSQLAdapter
 from src.vector_store.qdrant_adapter import qdrant_adapter, SearchResult
@@ -20,7 +21,7 @@ class QueryResult:
     """Result from query execution"""
     data: List[Dict[str, Any]]
     source: str
-    confidence: float
+    relevance: float
     response_time_ms: int
     metadata: Dict[str, Any]
 
@@ -61,16 +62,25 @@ class SelfCorrectingRouteEngine:
         results = await self._execute_query(query, routing_plan, mode)
         
         # Grade relevance
-        relevance_score, grading = await self._grade_relevance(query, results)
+        relevance_score, relevance_metrics = await self._grade_relevance(query, results)
         
         # Self-correct if needed
         self.correction_attempts = 0
         while relevance_score < self.relevance_threshold and self.correction_attempts < self.max_retries:
             logger.info(f"Low relevance score: {relevance_score:.2f}. Attempting self-correction (attempt {self.correction_attempts + 1})")
-            logger.info(f"Issues: {grading.issues}")
+            logger.info(f"Explanation: {relevance_metrics.score_explanation}")
+            
+            # Convert relevance metrics to grading for self-correction
+            grading = GradingResult(
+                relevance_score=relevance_metrics.relevance_score,
+                completeness_score=relevance_metrics.result_diversity,
+                accuracy_confidence=relevance_metrics.source_reliability,
+                issues=relevance_metrics.limitations,
+                suggestions=["Expand search", "Try different keywords"]
+            )
             
             results = await self._self_correct(query, routing_plan, results, grading)
-            relevance_score, grading = await self._grade_relevance(query, results)
+            relevance_score, relevance_metrics = await self._grade_relevance(query, results)
             self.correction_attempts += 1
         
         # Generate final response
@@ -78,7 +88,7 @@ class SelfCorrectingRouteEngine:
             query=query,
             results=results,
             routing_plan=routing_plan,
-            relevance_score=relevance_score,
+            relevance_metrics=relevance_metrics,
             response_time_ms=int((time.time() - start_time) * 1000)
         )
         
@@ -91,8 +101,7 @@ class SelfCorrectingRouteEngine:
             query=query,
             routing_plan=routing_plan,
             response=response,
-            relevance_score=relevance_score,
-            grading=grading
+            relevance_metrics=relevance_metrics
         )
         
         return response
@@ -199,7 +208,7 @@ class SelfCorrectingRouteEngine:
             return QueryResult(
                 data=data,
                 source="postgresql",
-                confidence=0.9 if data else 0.3,
+                relevance=0.9 if data else 0.3,
                 response_time_ms=response_time,
                 metadata={
                     "query_type": "structured",
@@ -253,7 +262,7 @@ class SelfCorrectingRouteEngine:
             return QueryResult(
                 data=data,
                 source="qdrant",
-                confidence=max([r.score for r in search_results]) if search_results else 0.3,
+                relevance=max([r.score for r in search_results]) if search_results else 0.3,
                 response_time_ms=response_time,
                 metadata={
                     "query_type": "semantic",
@@ -270,37 +279,28 @@ class SelfCorrectingRouteEngine:
         self,
         query: str,
         results: List[QueryResult]
-    ) -> Tuple[float, GradingResult]:
-        """Grade the relevance of results using advanced grading"""
+    ) -> Tuple[float, RelevanceMetrics]:
+        """Grade the relevance of results using improved relevance scoring"""
         if not results or not any(r.data for r in results):
-            return 0.0, GradingResult(
-                relevance_score=0.0,
-                completeness_score=0.0,
-                accuracy_confidence=0.0,
-                issues=["No results returned"],
-                suggestions=["Expand search", "Reformulate query"]
-            )
+            return 0.0, relevance_scorer._no_results_metrics()
         
-        # Combine all results for grading
+        # Combine all results for scoring
         all_data = []
+        sources_used = []
+        
         for r in results:
             all_data.extend(r.data)
+            sources_used.append(r.source)
         
-        # Use advanced grading
-        grading = await self.self_corrector.grade_results(
+        # Use improved relevance scoring
+        relevance_metrics = relevance_scorer.calculate_relevance(
             query=query,
             results=all_data,
-            expected_type=None
+            sources_used=sources_used,
+            query_metadata=None
         )
         
-        # Calculate overall score
-        overall_score = (
-            grading.relevance_score * 0.5 +
-            grading.completeness_score * 0.3 +
-            grading.accuracy_confidence * 0.2
-        )
-        
-        return overall_score, grading
+        return relevance_metrics.overall_score, relevance_metrics
     
     
     async def _self_correct(
@@ -390,7 +390,7 @@ class SelfCorrectingRouteEngine:
         query: str,
         results: List[QueryResult],
         routing_plan: Dict[str, Any],
-        relevance_score: float,
+        relevance_metrics: RelevanceMetrics,
         response_time_ms: int
     ) -> Dict[str, Any]:
         """Generate final response"""
@@ -414,12 +414,13 @@ class SelfCorrectingRouteEngine:
             "metadata": {
                 "query_type": routing_plan["query_type"],
                 "sources_used": sources_used,
-                "relevance_score": relevance_score,
+                "relevance_score": relevance_metrics.overall_score,
                 "response_time_ms": response_time_ms,
                 "result_count": len(all_data),
-                "self_corrected": relevance_score < self.relevance_threshold,
+                "self_corrected": relevance_metrics.overall_score < self.relevance_threshold,
                 "cache_hit": False
-            }
+            },
+            "relevance_metrics": relevance_metrics.to_dict()
         }
     
     async def _generate_summary(
@@ -495,8 +496,7 @@ class SelfCorrectingRouteEngine:
         query: str,
         routing_plan: Dict[str, Any],
         response: Dict[str, Any],
-        relevance_score: float,
-        grading: GradingResult = None
+        relevance_metrics: RelevanceMetrics
     ) -> None:
         """Log query performance metrics"""
         try:
@@ -509,7 +509,7 @@ class SelfCorrectingRouteEngine:
                     route_taken=routing_plan["data_source"],
                     response_time_ms=response["metadata"]["response_time_ms"],
                     result_count=response["metadata"]["result_count"],
-                    confidence_score=relevance_score,
+                    confidence_score=relevance_metrics.overall_score,
                     self_correction_triggered=response["metadata"]["self_corrected"]
                 )
                 
