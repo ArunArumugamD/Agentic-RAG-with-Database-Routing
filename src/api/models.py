@@ -174,21 +174,25 @@ class QueryResponse(BaseModel):
         description="List of intelligence results"
     )
     
-    total_results: int = Field(
+    total_results: Optional[int] = Field(
+        default=0,
         description="Total number of results found"
     )
     
-    confidence: float = Field(
+    confidence: Optional[float] = Field(
+        default=0.0,
         ge=0.0,
         le=1.0,
         description="Overall confidence score for the results"
     )
     
-    response_time: float = Field(
+    response_time: Optional[float] = Field(
+        default=0.0,
         description="Query processing time in seconds"
     )
     
-    source: List[str] = Field(
+    source: Optional[List[str]] = Field(
+        default_factory=list,
         description="Data sources used for the query"
     )
     

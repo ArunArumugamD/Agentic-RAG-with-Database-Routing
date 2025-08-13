@@ -3,6 +3,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI, HTTPException, Depends, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from fastapi.staticfiles import StaticFiles
 import logging
 
 from config.settings import settings
@@ -66,6 +67,9 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# Mount static files
+app.mount("/static", StaticFiles(directory="static"), name="static")
+
 
 @app.exception_handler(Exception)
 async def global_exception_handler(request: Request, exc: Exception):
@@ -85,13 +89,9 @@ async def global_exception_handler(request: Request, exc: Exception):
 
 @app.get("/", tags=["Root"])
 async def root():
-    """Root endpoint"""
-    return {
-        "name": settings.APP_NAME,
-        "version": settings.APP_VERSION,
-        "status": "running",
-        "docs": "/docs"
-    }
+    """Serve the main UI"""
+    from fastapi.responses import FileResponse
+    return FileResponse('static/index.html')
 
 
 @app.get("/health", response_model=HealthResponse, tags=["Health"])
@@ -183,19 +183,17 @@ async def execute_query(request: QueryRequest):
             mode=request.mode
         )
         
-        # Format response
-        response = QueryResponse(
-            query=request.query,
-            results=result.get("results", []),
-            total_results=result["metadata"]["result_count"],
-            confidence=result["metadata"]["relevance_score"],
-            response_time=time.time() - start_time,
-            source=result["metadata"]["sources_used"],
-            metadata=result["metadata"],
-            success=True
-        )
+        # Return result directly with all fields the frontend expects
+        response_data = {
+            "query": request.query,
+            "results": result.get("results", []),
+            "summary": result.get("summary"),
+            "metadata": result.get("metadata", {}),
+            "relevance_metrics": result.get("relevance_metrics", {}),
+            "success": True
+        }
         
-        return response
+        return response_data
         
     except Exception as e:
         logger.error(f"Query execution failed: {e}", exc_info=True)
@@ -207,7 +205,6 @@ async def execute_query(request: QueryRequest):
 
 @app.post(
     "/api/v1/query/advanced",
-    response_model=QueryResponse,
     tags=["Query"]
 )
 async def execute_advanced_query(request: QueryRequest):
@@ -245,18 +242,16 @@ async def execute_advanced_query(request: QueryRequest):
             result["results"] = filtered_results
             result["metadata"]["filtered_count"] = len(filtered_results)
         
-        response = QueryResponse(
-            query=request.query,
-            results=result.get("results", []),
-            total_results=result["metadata"]["result_count"],
-            confidence=result["metadata"]["relevance_score"],
-            response_time=time.time() - start_time,
-            source=result["metadata"]["sources_used"],
-            metadata=result["metadata"],
-            success=True
-        )
+        response_data = {
+            "query": request.query,
+            "results": result.get("results", []),
+            "summary": result.get("summary"),
+            "metadata": result.get("metadata", {}),
+            "relevance_metrics": result.get("relevance_metrics", {}),
+            "success": True
+        }
         
-        return response
+        return response_data
         
     except Exception as e:
         logger.error(f"Advanced query execution failed: {e}", exc_info=True)
