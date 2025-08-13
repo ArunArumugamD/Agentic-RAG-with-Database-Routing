@@ -229,9 +229,9 @@ class ImprovedRelevanceScorer:
                 elif age_days <= 90:
                     freshness_scores.append(0.5)  # Somewhat recent
                 elif age_days <= 365:
-                    freshness_scores.append(0.3)  # Old
+                    freshness_scores.append(0.7)  # Still relevant for security
                 else:
-                    freshness_scores.append(0.1)  # Very old
+                    freshness_scores.append(0.6)  # Famous CVEs stay relevant
             else:
                 freshness_scores.append(0.5)  # Unknown age - neutral score
         

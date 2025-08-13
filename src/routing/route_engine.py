@@ -136,7 +136,11 @@ class SelfCorrectingRouteEngine:
             if vector_result:
                 results.append(vector_result)
         
-        return results
+        # Apply deduplication to prevent duplicate CVEs from multiple sources
+        logger.info(f"Before deduplication: {len(results)} result groups with {sum(len(r.data) for r in results)} total items")
+        deduplicated_results = self._deduplicate_results(results)
+        logger.info(f"After deduplication: {len(deduplicated_results)} result groups")
+        return deduplicated_results
     
     async def _execute_postgresql_query(
         self,
@@ -491,6 +495,147 @@ class SelfCorrectingRouteEngine:
         except Exception as e:
             logger.error(f"Cache write failed: {e}")
     
+    def _deduplicate_results(self, results: List[QueryResult]) -> List[QueryResult]:
+        """
+        Remove duplicate CVEs and threat intelligence items from multiple sources.
+        Keeps the highest relevance version of each duplicate.
+        """
+        if not results:
+            return results
+        
+        # Combine all data from all result sources
+        all_items = []
+        for result in results:
+            for item in result.data:
+                # Add source information to each item
+                item_with_source = item.copy()
+                item_with_source['_source_db'] = result.source
+                item_with_source['_relevance'] = result.relevance
+                all_items.append(item_with_source)
+        
+        # Track duplicates by CVE ID and content hash
+        seen_cve_ids = {}
+        seen_content_hashes = {}
+        deduplicated_items = []
+        
+        for item in all_items:
+            # Extract unique identifiers
+            cve_id = self._extract_cve_id(item)
+            content_hash = self._get_content_hash(item)
+            
+            logger.info(f"Dedup: Processing item with CVE ID: {cve_id}, content hash: {content_hash[:8] if content_hash else None}")
+            
+            is_duplicate = False
+            
+            # Check for CVE ID duplicates first
+            if cve_id and cve_id in seen_cve_ids:
+                # Keep the one with higher relevance
+                existing_item = seen_cve_ids[cve_id]
+                if item['_relevance'] > existing_item['_relevance']:
+                    # Replace with higher relevance version
+                    deduplicated_items.remove(existing_item)
+                    seen_cve_ids[cve_id] = item
+                    deduplicated_items.append(item)
+                    logger.info(f"Replaced duplicate CVE {cve_id} with higher relevance version")
+                else:
+                    logger.info(f"Skipped duplicate CVE {cve_id} with lower relevance")
+                is_duplicate = True
+            
+            # Check for content duplicates (for all items, including CVEs with same content)
+            elif content_hash and content_hash in seen_content_hashes:
+                existing_item = seen_content_hashes[content_hash]
+                if item['_relevance'] > existing_item['_relevance']:
+                    deduplicated_items.remove(existing_item)
+                    seen_content_hashes[content_hash] = item
+                    deduplicated_items.append(item)
+                    logger.info(f"Replaced duplicate content with higher relevance version")
+                else:
+                    logger.info(f"Skipped duplicate content with lower relevance")
+                is_duplicate = True
+            else:
+                # Track both CVE ID and content hash for new items
+                if cve_id:
+                    seen_cve_ids[cve_id] = item
+                if content_hash:
+                    seen_content_hashes[content_hash] = item
+            
+            # Add if not a duplicate
+            if not is_duplicate:
+                deduplicated_items.append(item)
+        
+        # Create new QueryResult with deduplicated data
+        if deduplicated_items:
+            # Calculate metrics for deduplicated results
+            total_relevance = sum(item['_relevance'] for item in deduplicated_items)
+            avg_relevance = total_relevance / len(deduplicated_items)
+            
+            # Clean up internal fields
+            clean_items = []
+            for item in deduplicated_items:
+                clean_item = item.copy()
+                clean_item.pop('_source_db', None)
+                clean_item.pop('_relevance', None)
+                clean_items.append(clean_item)
+            
+            # Return single consolidated result
+            consolidated_result = QueryResult(
+                data=clean_items,
+                source="hybrid",
+                relevance=avg_relevance,
+                response_time_ms=0,  # Will be calculated at higher level
+                metadata={
+                    "deduplicated": True,
+                    "original_count": len(all_items),
+                    "deduplicated_count": len(clean_items),
+                    "sources_combined": [r.source for r in results]
+                }
+            )
+            
+            logger.info(f"Deduplication: {len(all_items)} → {len(clean_items)} items")
+            return [consolidated_result]
+        
+        return results
+    
+    def _extract_cve_id(self, item: Dict[str, Any]) -> Optional[str]:
+        """Extract CVE ID from various item formats"""
+        # Direct CVE ID field
+        if 'cve_id' in item:
+            return item['cve_id']
+        
+        # Metadata CVE ID (from Qdrant)
+        if 'metadata' in item and isinstance(item['metadata'], dict):
+            return item['metadata'].get('cve_id')
+        
+        # Extract from content field
+        content = item.get('content', '')
+        if isinstance(content, str) and 'CVE-' in content:
+            import re
+            match = re.search(r'CVE-\d{4}-\d+', content)
+            if match:
+                return match.group(0)
+        
+        return None
+    
+    def _get_content_hash(self, item: Dict[str, Any]) -> Optional[str]:
+        """Generate hash for content-based deduplication"""
+        import hashlib
+        
+        # Use content field if available
+        content = item.get('content', '')
+        if isinstance(content, str) and len(content) > 50:
+            # Use a larger sample (400 chars) to better catch duplicates
+            # and normalize whitespace for consistent hashing
+            content_sample = ' '.join(content[:400].split())
+            return hashlib.md5(content_sample.encode()).hexdigest()
+        
+        # Fallback to description
+        description = item.get('description', '')
+        if isinstance(description, str) and len(description) > 50:
+            desc_sample = ' '.join(description[:400].split())
+            return hashlib.md5(desc_sample.encode()).hexdigest()
+        
+        return None
+
     async def _log_query_performance(
         self,
         query: str,

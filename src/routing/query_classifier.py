@@ -410,7 +410,7 @@ class CybersecurityQueryClassifier:
             },
             "vector_params": {
                 "limit": 10,
-                "score_threshold": 0.5
+                "score_threshold": 0.3
             },
             "confidence": classification.confidence
         }
