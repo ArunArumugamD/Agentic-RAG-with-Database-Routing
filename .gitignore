@@ -94,3 +94,11 @@ coverage.xml
 .mypy_cache/
 .dmypy.json
 dmypy.json
+
+#testfiles
+fix_database_schema.py
+quick_test_threat_intel.py
+test_cve_collection.py
+test_enhanced_system.py
+test_improved_scoring.py
+test_threat_intel_collection.py
