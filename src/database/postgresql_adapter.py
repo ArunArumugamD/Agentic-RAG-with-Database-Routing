@@ -394,7 +394,30 @@ class PostgreSQLAdapter:
     async def create_cve(self, cve_data: Dict[str, Any]) -> Optional[CVERecord]:
         """Create a new CVE record."""
         try:
-            cve = CVERecord(**cve_data)
+            # Fix field name mismatches between collection script and schema
+            cve_data_fixed = cve_data.copy()
+            
+            if 'has_exploit' in cve_data_fixed:
+                cve_data_fixed['exploit_available'] = cve_data_fixed.pop('has_exploit')
+            if 'has_patch' in cve_data_fixed:
+                cve_data_fixed['patch_available'] = cve_data_fixed.pop('has_patch')
+            
+            # Convert string dates to datetime objects (timezone-naive for PostgreSQL)
+            from datetime import datetime
+            date_fields = ['published_date', 'modified_date']
+            for field in date_fields:
+                if field in cve_data_fixed and isinstance(cve_data_fixed[field], str):
+                    try:
+                        # Parse ISO format dates and convert to timezone-naive
+                        dt_str = cve_data_fixed[field].replace('Z', '+00:00')
+                        dt_aware = datetime.fromisoformat(dt_str)
+                        # Convert to timezone-naive UTC for PostgreSQL
+                        cve_data_fixed[field] = dt_aware.replace(tzinfo=None)
+                    except (ValueError, AttributeError):
+                        # If parsing fails, set to None
+                        cve_data_fixed[field] = None
+            
+            cve = CVERecord(**cve_data_fixed)
             self.session.add(cve)
             await self.session.flush()
             await self.session.refresh(cve)
