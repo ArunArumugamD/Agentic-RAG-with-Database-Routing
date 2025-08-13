@@ -1,0 +1,183 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ThreatRAG - Intelligent Threat Intelligence System</title>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <link href="/static/styles.css" rel="stylesheet">
+</head>
+<body>
+    <!-- Header -->
+    <header class="header">
+        <div class="container">
+            <div class="header-content">
+                <div class="logo">
+                    <i class="fas fa-shield-alt"></i>
+                    <span class="logo-text">ThreatRAG</span>
+                </div>
+            </div>
+        </div>
+    </header>
+
+    <!-- Main Content -->
+    <main class="main">
+        <div class="container">
+            
+            <!-- Query Section -->
+            <section class="query-section">
+                <div class="query-header">
+                    <h2><i class="fas fa-search"></i> Query Threat Intelligence</h2>
+                </div>
+                
+                <div class="query-form">
+                    <div class="input-group">
+                        <input 
+                            type="text" 
+                            id="queryInput" 
+                            class="query-input" 
+                            placeholder="e.g., 'Critical Apache vulnerabilities' or 'Recent malware hashes'"
+                            autocomplete="off"
+                        >
+                        <button id="searchBtn" class="search-btn" disabled>
+                            <i class="fas fa-rocket"></i> Analyze
+                        </button>
+                    </div>
+                    
+                    <div class="search-mode">
+                        <label for="searchMode">Search Mode:</label>
+                        <select id="searchMode" class="mode-select">
+                            <option value="fast">Fast</option>
+                            <option value="auto" selected>Auto</option>
+                            <option value="comprehensive">Comprehensive</option>
+                            <option value="detailed">Detailed</option>
+                        </select>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Example Queries -->
+            <section class="examples-section">
+                <h3><i class="fas fa-lightbulb"></i> Try These Queries (Based on Our Actual Data)</h3>
+                <div class="examples-grid">
+                    <button class="example-btn" data-query="Critical CVE vulnerabilities">
+                        <i class="fas fa-exclamation-triangle"></i>
+                        Critical CVE vulnerabilities
+                    </button>
+                    <button class="example-btn" data-query="Apache vulnerabilities">
+                        <i class="fab fa-apache"></i>
+                        Apache vulnerabilities
+                    </button>
+                    <button class="example-btn" data-query="Windows CVEs published recently">
+                        <i class="fab fa-windows"></i>
+                        Windows CVEs published recently
+                    </button>
+                    <button class="example-btn" data-query="Malware indicators from OTX">
+                        <i class="fas fa-virus"></i>
+                        Malware indicators from OTX
+                    </button>
+                    <button class="example-btn" data-query="High CVSS score vulnerabilities">
+                        <i class="fas fa-chart-line"></i>
+                        High CVSS score vulnerabilities
+                    </button>
+                    <button class="example-btn" data-query="Recent threat intelligence">
+                        <i class="fas fa-clock"></i>
+                        Recent threat intelligence
+                    </button>
+                </div>
+            </section>
+
+            <!-- Loading State -->
+            <section id="loadingSection" class="loading-section" style="display: none;">
+                <div class="loading-content">
+                    <div class="loading-spinner"></div>
+                    <div class="loading-text">
+                        <span id="loadingMessage">Analyzing threat intelligence query...</span>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Results Section -->
+            <section id="resultsSection" class="results-section" style="display: none;">
+                <div class="results-header">
+                    <h2 id="resultsTitle">Results</h2>
+                </div>
+                
+                <!-- Metrics -->
+                <div class="metrics-grid">
+                    <div class="metric-card">
+                        <div class="metric-value" id="resultCount">0</div>
+                        <div class="metric-label">Results Found</div>
+                    </div>
+                    <div class="metric-card">
+                        <div class="metric-value" id="responseTime">0ms</div>
+                        <div class="metric-label">Response Time</div>
+                    </div>
+                    <div class="metric-card">
+                        <div class="metric-value" id="sourcesUsed">0</div>
+                        <div class="metric-label">Sources Used</div>
+                    </div>
+                </div>
+
+                <!-- Routing Info -->
+                <div id="routingInfo" class="info-card" style="display: none;">
+                    <h4><i class="fas fa-route"></i> Intelligent Routing</h4>
+                    <p id="routingText"></p>
+                </div>
+
+                <!-- Relevance Analysis -->
+                <div id="relevanceInfo" class="info-card success" style="display: none;">
+                    <h4><i class="fas fa-brain"></i> Relevance Analysis</h4>
+                    <p id="relevanceText"></p>
+                </div>
+
+                <!-- Limitations -->
+                <div id="limitationsInfo" class="info-card warning" style="display: none;">
+                    <h4><i class="fas fa-info-circle"></i> Understanding These Results</h4>
+                    <ul id="limitationsList"></ul>
+                </div>
+
+                <!-- Self-Correction Notice -->
+                <div id="selfCorrectionInfo" class="info-card info" style="display: none;">
+                    <h4><i class="fas fa-sync-alt"></i> Self-Correction Applied</h4>
+                    <p>The system automatically tried different search strategies to improve results.</p>
+                </div>
+
+                <!-- Results Data -->
+                <div id="resultsData" class="results-data">
+                    <h3><i class="fas fa-database"></i> Threat Intelligence Data</h3>
+                    <div id="resultsList" class="results-list"></div>
+                </div>
+
+                <!-- No Results -->
+                <div id="noResults" class="no-results" style="display: none;">
+                    <div class="no-results-icon">
+                        <i class="fas fa-search-minus"></i>
+                    </div>
+                    <h3>No results found</h3>
+                    <div class="suggestions">
+                        <p>Try:</p>
+                        <ul>
+                            <li>Using broader terms (e.g., "Apache" instead of "Apache SQL injection")</li>
+                            <li>Checking our example queries above</li>
+                            <li>Remember: Our dataset contains recent CVEs and IOCs, not all historical data</li>
+                        </ul>
+                    </div>
+                </div>
+            </section>
+
+        </div>
+    </main>
+
+    <!-- Footer -->
+    <footer class="footer">
+        <div class="container">
+            <div class="footer-content">
+                <strong>ThreatRAG</strong> - Intelligent database routing for threat intelligence<br>
+            </div>
+        </div>
+    </footer>
+
+    <script src="/static/app.js"></script>
+</body>
+</html>
